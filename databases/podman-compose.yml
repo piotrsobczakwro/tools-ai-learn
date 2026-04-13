@@ -103,7 +103,7 @@ services:
     networks:
       - db-net
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${PXC_ROOT_PASSWORD:-rootpassword}"]
       interval: 20s
       timeout: 5s
       retries: 10
