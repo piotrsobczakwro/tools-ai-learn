@@ -1,0 +1,310 @@
+version: "3.8"
+
+# Databases:
+#   - MySQL 8.2
+#   - PostgreSQL 16
+#   - Percona XtraDB Cluster (3-node PXC)
+#   - Elasticsearch 8.11 (search/analytics engine)
+#   - Vitess (MySQL-compatible sharded DB — vtgate + vttablet + MySQL + etcd + vtctld)
+
+networks:
+  db-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  postgres-data:
+  pxc1-data:
+  pxc2-data:
+  pxc3-data:
+  elasticsearch-data:
+  etcd-data:
+  vitess-vt-data:
+
+services:
+
+  # ─── MySQL 8.2 ───────────────────────────────────────────────────────────────
+
+  mysql:
+    image: docker.io/library/mysql:8.2
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-appdb}
+      MYSQL_USER: ${MYSQL_USER:-appuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-apppassword}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - db-net
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
+      --max-connections=200
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  postgres:
+    image: docker.io/library/postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pgpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - db-net
+    command: >
+      postgres
+        -c max_connections=200
+        -c shared_buffers=256MB
+        -c effective_cache_size=768MB
+        -c maintenance_work_mem=64MB
+        -c wal_level=replica
+        -c log_min_duration_statement=500
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pguser} -d ${POSTGRES_DB:-appdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ─── Percona XtraDB Cluster — 3-node Galera cluster ──────────────────────────
+  # Node 1 bootstraps the cluster; nodes 2 & 3 join.
+
+  pxc-node1:
+    image: docker.io/percona/percona-xtradb-cluster:8.0
+    container_name: pxc-node1
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PXC_ROOT_PASSWORD:-rootpassword}
+      CLUSTER_NAME: pxc-cluster
+      XTRABACKUP_PASSWORD: ${PXC_XTRABACKUP_PASSWORD:-xtrabackup_password}
+      MYSQL_DATABASE: ${PXC_DATABASE:-pxcdb}
+      MYSQL_USER: ${PXC_USER:-pxcuser}
+      MYSQL_PASSWORD: ${PXC_PASSWORD:-pxcpassword}
+    volumes:
+      - pxc1-data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    networks:
+      - db-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${PXC_ROOT_PASSWORD:-rootpassword}"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  pxc-node2:
+    image: docker.io/percona/percona-xtradb-cluster:8.0
+    container_name: pxc-node2
+    depends_on:
+      pxc-node1:
+        condition: service_healthy
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PXC_ROOT_PASSWORD:-rootpassword}
+      CLUSTER_NAME: pxc-cluster
+      XTRABACKUP_PASSWORD: ${PXC_XTRABACKUP_PASSWORD:-xtrabackup_password}
+      CLUSTER_JOIN: pxc-node1
+    volumes:
+      - pxc2-data:/var/lib/mysql
+    ports:
+      - "3308:3306"
+    networks:
+      - db-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${PXC_ROOT_PASSWORD:-rootpassword}"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  pxc-node3:
+    image: docker.io/percona/percona-xtradb-cluster:8.0
+    container_name: pxc-node3
+    depends_on:
+      pxc-node1:
+        condition: service_healthy
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PXC_ROOT_PASSWORD:-rootpassword}
+      CLUSTER_NAME: pxc-cluster
+      XTRABACKUP_PASSWORD: ${PXC_XTRABACKUP_PASSWORD:-xtrabackup_password}
+      CLUSTER_JOIN: pxc-node1
+    volumes:
+      - pxc3-data:/var/lib/mysql
+    ports:
+      - "3309:3306"
+    networks:
+      - db-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${PXC_ROOT_PASSWORD:-rootpassword}"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # ─── Elasticsearch 8.11 ──────────────────────────────────────────────────────
+
+  elasticsearch:
+    image: docker.io/elastic/elasticsearch:8.11.0
+    container_name: elasticsearch-db
+    environment:
+      - node.name=elasticsearch-db
+      - cluster.name=db-es-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - db-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # ─── Vitess ──────────────────────────────────────────────────────────────────
+  # Architecture: etcd (topology) → vtctld (control) → vttablet+MySQL → vtgate
+  # vtgate is the main query entry point for applications.
+
+  etcd:
+    image: docker.io/bitnami/etcd:3.5
+    container_name: vitess-etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+    volumes:
+      - etcd-data:/bitnami/etcd/data
+    ports:
+      - "2379:2379"
+    networks:
+      - db-net
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  vtctld:
+    image: docker.io/vitess/lite:latest
+    container_name: vitess-vtctld
+    depends_on:
+      etcd:
+        condition: service_healthy
+    command:
+      - vtctld
+      - --topo_implementation=etcd2
+      - --topo_global_server_address=etcd:2379
+      - --topo_global_root=/vitess/global
+      - --port=15000
+      - --grpc_port=15999
+    ports:
+      - "15000:15000"
+      - "15999:15999"
+    networks:
+      - db-net
+    restart: unless-stopped
+
+  vttablet:
+    image: docker.io/vitess/lite:latest
+    container_name: vitess-vttablet
+    depends_on:
+      etcd:
+        condition: service_healthy
+      vtctld:
+        condition: service_started
+    volumes:
+      - vitess-vt-data:/vt/vtdataroot
+    command:
+      - vttablet
+      - --topo_implementation=etcd2
+      - --topo_global_server_address=etcd:2379
+      - --topo_global_root=/vitess/global
+      - --tablet-path=zone1-0000000100
+      - --tablet_hostname=vttablet
+      - --init_keyspace=commerce
+      - --init_shard=-
+      - --init_tablet_type=primary
+      - --port=15100
+      - --grpc_port=16100
+      - --service_map=grpc-queryservice,grpc-tabletmanager,grpc-updatestream
+      - --db_dba_user=root
+      - --db_app_user=vt_app
+      - --db_allprivs_user=vt_allprivs
+      - --db_repl_user=vt_repl
+      - --db_filtered_user=vt_filtered
+      - --mycnf_mysql_port=3310
+      - --enable_semi_sync
+      - --restore_from_backup
+    ports:
+      - "15100:15100"
+      - "16100:16100"
+    networks:
+      - db-net
+    restart: unless-stopped
+
+  vtgate:
+    image: docker.io/vitess/lite:latest
+    container_name: vitess-vtgate
+    depends_on:
+      vttablet:
+        condition: service_started
+    command:
+      - vtgate
+      - --topo_implementation=etcd2
+      - --topo_global_server_address=etcd:2379
+      - --topo_global_root=/vitess/global
+      - --port=15001
+      - --grpc_port=15991
+      - --mysql_server_port=15306
+      - --mysql_server_socket_path=/tmp/mysql.sock
+      - --cell=zone1
+      - --cells_to_watch=zone1
+      - --tablet_types_to_wait=PRIMARY,REPLICA
+      - --service_map=grpc-vtgateservice
+      - --normalize_queries=true
+    ports:
+      - "15001:15001"   # vtgate HTTP
+      - "15991:15991"   # vtgate gRPC
+      - "15306:15306"   # MySQL protocol (connect your app here)
+    networks:
+      - db-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:15001/debug/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped

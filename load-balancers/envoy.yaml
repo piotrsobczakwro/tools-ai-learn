@@ -1,0 +1,99 @@
+admin:
+  address:
+    socket_address:
+      protocol: TCP
+      address: 0.0.0.0
+      port_value: 9901
+  access_log:
+    - name: envoy.access_loggers.stdout
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+
+static_resources:
+  listeners:
+    - name: listener_http
+      address:
+        socket_address:
+          protocol: TCP
+          address: 0.0.0.0
+          port_value: 10000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: backend_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/service1"
+                          route:
+                            cluster: service_backend1
+                            prefix_rewrite: "/"
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: service_backend_lb
+                http_filters:
+                  - name: envoy.filters.http.health_check
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
+                      pass_through_mode: false
+                      headers:
+                        - name: ":path"
+                          string_match:
+                            exact: "/healthz"
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: service_backend_lb
+      connect_timeout: 30s
+      type: STRICT_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 2
+          http_health_check:
+            path: "/"
+      load_assignment:
+        cluster_name: service_backend_lb
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: backend1
+                      port_value: 80
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: backend2
+                      port_value: 80
+
+    - name: service_backend1
+      connect_timeout: 30s
+      type: STRICT_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: service_backend1
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: backend1
+                      port_value: 80

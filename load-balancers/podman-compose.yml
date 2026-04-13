@@ -1,0 +1,90 @@
+version: "3.8"
+
+# Load Balancers: HAProxy, Envoy
+# LVS (Linux Virtual Server) is kernel-level and requires host networking;
+# see the README for LVS setup notes.
+
+networks:
+  lb-net:
+    driver: bridge
+
+volumes:
+  haproxy-data:
+
+services:
+
+  # ─── Backend Services (simulated app servers) ────────────────────────────────
+
+  backend1:
+    image: docker.io/library/nginx:1.25
+    container_name: lb-backend1
+    networks:
+      - lb-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  backend2:
+    image: docker.io/library/nginx:1.25
+    container_name: lb-backend2
+    networks:
+      - lb-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ─── HAProxy ─────────────────────────────────────────────────────────────────
+
+  haproxy:
+    image: docker.io/library/haproxy:2.9
+    container_name: haproxy
+    depends_on:
+      backend1:
+        condition: service_healthy
+      backend2:
+        condition: service_healthy
+    ports:
+      - "8080:80"       # HAProxy HTTP frontend
+      - "8404:8404"     # HAProxy stats page
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - lb-net
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ─── Envoy Proxy ─────────────────────────────────────────────────────────────
+
+  envoy:
+    image: docker.io/envoyproxy/envoy:v1.29-latest
+    container_name: envoy
+    depends_on:
+      backend1:
+        condition: service_healthy
+      backend2:
+        condition: service_healthy
+    ports:
+      - "10000:10000"   # Envoy HTTP listener
+      - "9901:9901"     # Envoy admin UI
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    networks:
+      - lb-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
