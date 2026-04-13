@@ -47,6 +47,11 @@ services:
       --max-connections=200
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   postgres:
     image: docker.io/library/postgres:16
@@ -124,6 +129,13 @@ services:
       - db-net
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${PXC_ROOT_PASSWORD:-rootpassword}"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  pxc-node3:
     image: docker.io/percona/percona-xtradb-cluster:8.0
     container_name: pxc-node3
     depends_on:

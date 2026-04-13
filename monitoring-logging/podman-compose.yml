@@ -117,8 +117,8 @@ services:
     image: docker.io/grafana/grafana:10.2.0
     container_name: grafana
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_DOMAIN=localhost
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
@@ -142,8 +142,8 @@ services:
     image: docker.io/library/mongo:6.0
     container_name: graylog-mongodb
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=graylog
-      - MONGO_INITDB_ROOT_PASSWORD=graylog_password
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_GRAYLOG_USER:-graylog}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_GRAYLOG_PASSWORD:-graylog_password}
       - MONGO_INITDB_DATABASE=graylog
     volumes:
       - mongodb-data:/data/db
@@ -179,7 +179,7 @@ services:
       - GRAYLOG_HTTP_BIND_ADDRESS=0.0.0.0:9000
       - GRAYLOG_HTTP_EXTERNAL_URI=http://localhost:9000/
       - GRAYLOG_ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - GRAYLOG_MONGODB_URI=mongodb://graylog:graylog_password@mongodb:27017/graylog
+      - GRAYLOG_MONGODB_URI=mongodb://${MONGO_GRAYLOG_USER:-graylog}:${MONGO_GRAYLOG_PASSWORD:-graylog_password}@mongodb:27017/graylog
     volumes:
       - graylog-data:/usr/share/graylog/data
     ports:
