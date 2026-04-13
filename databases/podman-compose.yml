@@ -29,10 +29,10 @@ services:
     image: docker.io/library/mysql:8.2
     container_name: mysql
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: appdb
-      MYSQL_USER: appuser
-      MYSQL_PASSWORD: apppassword
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-appdb}
+      MYSQL_USER: ${MYSQL_USER:-appuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-apppassword}
     volumes:
       - mysql-data:/var/lib/mysql
     ports:
@@ -46,22 +46,15 @@ services:
       --innodb-buffer-pool-size=256M
       --max-connections=200
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-
-  # ─── PostgreSQL 16 ───────────────────────────────────────────────────────────
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
 
   postgres:
     image: docker.io/library/postgres:16
     container_name: postgres
     environment:
-      POSTGRES_USER: pguser
-      POSTGRES_PASSWORD: pgpassword
-      POSTGRES_DB: appdb
+      POSTGRES_USER: ${POSTGRES_USER:-pguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pgpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -78,7 +71,7 @@ services:
         -c wal_level=replica
         -c log_min_duration_statement=500
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pguser -d appdb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pguser} -d ${POSTGRES_DB:-appdb}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,12 +85,12 @@ services:
     image: docker.io/percona/percona-xtradb-cluster:8.0
     container_name: pxc-node1
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_PASSWORD: ${PXC_ROOT_PASSWORD:-rootpassword}
       CLUSTER_NAME: pxc-cluster
-      XTRABACKUP_PASSWORD: xtrabackup_password
-      MYSQL_DATABASE: pxcdb
-      MYSQL_USER: pxcuser
-      MYSQL_PASSWORD: pxcpassword
+      XTRABACKUP_PASSWORD: ${PXC_XTRABACKUP_PASSWORD:-xtrabackup_password}
+      MYSQL_DATABASE: ${PXC_DATABASE:-pxcdb}
+      MYSQL_USER: ${PXC_USER:-pxcuser}
+      MYSQL_PASSWORD: ${PXC_PASSWORD:-pxcpassword}
     volumes:
       - pxc1-data:/var/lib/mysql
     ports:
@@ -119,9 +112,9 @@ services:
       pxc-node1:
         condition: service_healthy
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_PASSWORD: ${PXC_ROOT_PASSWORD:-rootpassword}
       CLUSTER_NAME: pxc-cluster
-      XTRABACKUP_PASSWORD: xtrabackup_password
+      XTRABACKUP_PASSWORD: ${PXC_XTRABACKUP_PASSWORD:-xtrabackup_password}
       CLUSTER_JOIN: pxc-node1
     volumes:
       - pxc2-data:/var/lib/mysql
@@ -130,23 +123,16 @@ services:
     networks:
       - db-net
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 20s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-    restart: unless-stopped
-
-  pxc-node3:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${PXC_ROOT_PASSWORD:-rootpassword}"]
     image: docker.io/percona/percona-xtradb-cluster:8.0
     container_name: pxc-node3
     depends_on:
       pxc-node1:
         condition: service_healthy
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_PASSWORD: ${PXC_ROOT_PASSWORD:-rootpassword}
       CLUSTER_NAME: pxc-cluster
-      XTRABACKUP_PASSWORD: xtrabackup_password
+      XTRABACKUP_PASSWORD: ${PXC_XTRABACKUP_PASSWORD:-xtrabackup_password}
       CLUSTER_JOIN: pxc-node1
     volumes:
       - pxc3-data:/var/lib/mysql
@@ -155,7 +141,7 @@ services:
     networks:
       - db-net
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${PXC_ROOT_PASSWORD:-rootpassword}"]
       interval: 20s
       timeout: 5s
       retries: 10

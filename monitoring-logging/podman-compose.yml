@@ -97,7 +97,8 @@ services:
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - XPACK_SECURITY_ENABLED=false
-      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d
+      # Generate a strong random key for production: openssl rand -hex 32
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY:-a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d}
     ports:
       - "5601:5601"
     networks:
@@ -170,8 +171,11 @@ services:
         condition: service_healthy
     environment:
       - GRAYLOG_NODE_ID_FILE=/usr/share/graylog/data/config/node-id
-      - GRAYLOG_PASSWORD_SECRET=somepasswordsecret1234567890abcdef
-      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      # Generate a strong secret: pwgen -N 1 -s 96
+      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET:-somepasswordsecret1234567890abcdef}
+      # SHA2 of the admin password. Default is sha256("admin") — CHANGE IN PRODUCTION.
+      # Generate: echo -n "yourpassword" | sha256sum | cut -d " " -f 1
+      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2:-8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918}
       - GRAYLOG_HTTP_BIND_ADDRESS=0.0.0.0:9000
       - GRAYLOG_HTTP_EXTERNAL_URI=http://localhost:9000/
       - GRAYLOG_ELASTICSEARCH_HOSTS=http://elasticsearch:9200

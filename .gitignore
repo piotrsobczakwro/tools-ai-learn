@@ -1,0 +1,14 @@
+# Local environment variable files — never commit these
+.env
+*/.env
+
+# Podman/Docker generated files
+*.pid
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp

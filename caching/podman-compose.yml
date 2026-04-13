@@ -21,7 +21,7 @@ services:
     container_name: redis
     command: >
       redis-server
-        --requirepass redispassword
+        --requirepass ${REDIS_PASSWORD:-redispassword}
         --appendonly yes
         --appendfsync everysec
         --save 900 1
@@ -37,7 +37,7 @@ services:
     networks:
       - cache-net
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redispassword", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -65,7 +65,7 @@ services:
         cat > /etc/redis/sentinel.conf <<EOF
         port 26379
         sentinel monitor mymaster redis 6379 1
-        sentinel auth-pass mymaster redispassword
+        sentinel auth-pass mymaster ${REDIS_PASSWORD:-redispassword}
         sentinel down-after-milliseconds mymaster 5000
         sentinel failover-timeout mymaster 10000
         sentinel parallel-syncs mymaster 1
