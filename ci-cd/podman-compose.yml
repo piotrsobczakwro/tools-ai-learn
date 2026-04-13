@@ -1,0 +1,49 @@
+version: "3.8"
+
+# CI/CD tooling:
+#   - GitLab Runner  (executes GitLab CI/CD pipeline jobs)
+#
+# Note: GitHub Actions is a SaaS platform — there is no self-hosted
+# "GitHub Actions server" container. Self-hosted runners connect back
+# to github.com. See .github/workflows/example.yml for workflow examples
+# and the README for self-hosted runner setup.
+
+networks:
+  cicd-net:
+    driver: bridge
+
+volumes:
+  gitlab-runner-config:
+  gitlab-runner-cache:
+
+services:
+
+  # ─── GitLab Runner ───────────────────────────────────────────────────────────
+  # Register the runner with:
+  #   podman-compose exec gitlab-runner \
+  #     gitlab-runner register \
+  #       --url https://gitlab.com \
+  #       --registration-token <YOUR_TOKEN> \
+  #       --executor docker \
+  #       --docker-image docker:latest \
+  #       --description "local-runner"
+
+  gitlab-runner:
+    image: docker.io/gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    volumes:
+      - gitlab-runner-config:/etc/gitlab-runner
+      - gitlab-runner-cache:/cache
+      # Mount the Docker socket so the runner can spawn Docker-based jobs
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - CI_SERVER_URL=https://gitlab.com
+    networks:
+      - cicd-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "gitlab-runner", "verify", "--delete"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

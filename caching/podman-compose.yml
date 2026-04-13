@@ -1,0 +1,103 @@
+version: "3.8"
+
+# Caching layer:
+#   - Redis 7.2     (feature-rich in-memory data structure store)
+#   - Memcached 1.6 (simple, high-performance distributed memory cache)
+
+networks:
+  cache-net:
+    driver: bridge
+
+volumes:
+  redis-data:
+
+services:
+
+  # ─── Redis 7.2 ───────────────────────────────────────────────────────────────
+  # Includes persistence (AOF + RDB) and password auth.
+
+  redis:
+    image: docker.io/library/redis:7.2
+    container_name: redis
+    command: >
+      redis-server
+        --requirepass redispassword
+        --appendonly yes
+        --appendfsync everysec
+        --save 900 1
+        --save 300 10
+        --save 60 10000
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --loglevel notice
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - cache-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redispassword", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ─── Redis Sentinel (High Availability) ──────────────────────────────────────
+  # Monitors the primary Redis instance and handles automatic failover.
+
+  redis-sentinel:
+    image: docker.io/library/redis:7.2
+    container_name: redis-sentinel
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    environment:
+      - SENTINEL_DOWN_AFTER=5000
+      - SENTINEL_FAILOVER=10000
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        cat > /etc/redis/sentinel.conf <<EOF
+        port 26379
+        sentinel monitor mymaster redis 6379 1
+        sentinel auth-pass mymaster redispassword
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 10000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        exec redis-sentinel /etc/redis/sentinel.conf
+    ports:
+      - "26379:26379"
+    networks:
+      - cache-net
+    restart: unless-stopped
+
+  # ─── Memcached 1.6 ───────────────────────────────────────────────────────────
+  # Stateless; scales horizontally. No persistence.
+
+  memcached:
+    image: docker.io/library/memcached:1.6
+    container_name: memcached
+    command:
+      - memcached
+      - -m 256          # memory limit in MB
+      - -c 1024         # max simultaneous connections
+      - -t 4            # number of threads
+      - -I 5m           # max item size
+      - -v
+    ports:
+      - "11211:11211"
+    networks:
+      - cache-net
+    healthcheck:
+      test: ["CMD-SHELL", "echo stats | nc -w 1 localhost 11211 | grep -q uptime"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
