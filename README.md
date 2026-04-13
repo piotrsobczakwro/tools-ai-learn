@@ -1,0 +1,6 @@
+- Haproxy, LVS, Envoy
+- Grafana, Graylog, ELK stack, Jaeger
+- GitHub Actions/ GitLab CI/CD
+- Mysql, Percona XtraDB Cluster, Postgresql, Elasticsearch, Vitess
+- Redis, Memcache
+- RabbitMQ, Kafka, PubSub
